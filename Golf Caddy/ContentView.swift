@@ -301,7 +301,14 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             
-            giantLandscapeYardageOverlay
+            if locationReady {
+                VStack {
+                    giantLandscapeYardageOverlay
+                        .padding(.top, 90)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+            }
             
             VStack {
                 HStack(alignment: .top) {
