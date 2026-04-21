@@ -1,17 +1,26 @@
 import Foundation
 
+// 🔥 Wrapper for API response
+struct CourseDetailWrapper: Codable {
+    let course: CourseDetailResponse
+}
+
+// MARK: - Search Models
+
 struct CourseSearchResponse: Codable {
-    let courses: [CourseSearchItem]
+    let courses: [CourseSearchItem]?
 }
 
 struct CourseSearchItem: Codable {
-    let id: Int
+    let id: Int?
     let club_name: String?
     let course_name: String?
 }
 
+// MARK: - Detail Models
+
 struct CourseDetailResponse: Codable {
-    let id: Int
+    let id: Int?
     let club_name: String?
     let course_name: String?
     let location: APILocation?
@@ -39,69 +48,94 @@ struct APIHoleData: Codable {
     let handicap: Int?
 }
 
+// MARK: - API CLIENT
+
 enum GolfCourseAPIClient {
     
     static let apiKey = "6BYEO6KXXAO7RBVKICYTAIKOEA"
     
-    static func searchCourse(named query: String) async throws -> Int? {
+    // SEARCH
+    static func searchCourses(named query: String) async throws -> [CourseSearchItem] {
         var components = URLComponents(string: "https://api.golfcourseapi.com/v1/search")!
         components.queryItems = [
             URLQueryItem(name: "search_query", value: query)
         ]
         
-        guard let url = components.url else { return nil }
+        let url = components.url!
         
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
         request.setValue("Key \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        if let httpResponse = response as? HTTPURLResponse {
-            print("Search status: \(httpResponse.statusCode)")
-        }
+        let (data, _) = try await URLSession.shared.data(for: request)
         
         let decoded = try JSONDecoder().decode(CourseSearchResponse.self, from: data)
-        return decoded.courses.first?.id
+        return decoded.courses ?? []
     }
     
+    // LOAD COURSE
+    static func loadCourse(named query: String) async throws -> Course? {
+        let results = try await searchCourses(named: query)
+        
+        print("Search results:")
+        results.forEach {
+            print("ID: \($0.id ?? -1), Name: \($0.course_name ?? "nil")")
+        }
+        
+        let bestMatch = results.first {
+            ($0.course_name ?? "").lowercased().contains(query.lowercased())
+        }
+        
+        let selected = bestMatch ?? results.first
+        
+        guard let id = selected?.id else {
+            print("No valid course ID")
+            return nil
+        }
+        
+        print("Using course ID: \(id)")
+        
+        return try await getCourse(id: id)
+    }
+    
+    // GET COURSE DETAILS
     static func getCourse(id: Int) async throws -> Course? {
         let url = URL(string: "https://api.golfcourseapi.com/v1/courses/\(id)")!
         
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
         request.setValue("Key \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await URLSession.shared.data(for: request)
         
-        if let httpResponse = response as? HTTPURLResponse {
-            print("Course detail status: \(httpResponse.statusCode)")
+        if let raw = String(data: data, encoding: .utf8) {
+            print("RAW RESPONSE:")
+            print(raw)
         }
         
-        let decoded = try JSONDecoder().decode(CourseDetailResponse.self, from: data)
+        // 🔥 FIX: Decode wrapper
+        let wrapper = try JSONDecoder().decode(CourseDetailWrapper.self, from: data)
+        let decoded = wrapper.course
+        
         return mapToCourse(decoded)
     }
     
-    static func loadCourse(named query: String) async throws -> Course? {
-        guard let id = try await searchCourse(named: query) else { return nil }
-        return try await getCourse(id: id)
-    }
-    
+    // MAP TO APP MODEL
     static func mapToCourse(_ apiCourse: CourseDetailResponse) -> Course? {
-        guard let tee = apiCourse.tees?.male?.first ?? apiCourse.tees?.female?.first else {
+        
+        let allTees = (apiCourse.tees?.male ?? []) + (apiCourse.tees?.female ?? [])
+        
+        guard let tee = allTees.first(where: { $0.holes?.isEmpty == false }) else {
+            print("No usable tee found")
             return nil
         }
         
-        guard let holesData = tee.holes, !holesData.isEmpty else {
+        guard let holesData = tee.holes else {
             return nil
         }
         
-        let holes: [Hole] = holesData.enumerated().map { index, holeData in
+        let holes: [Hole] = holesData.enumerated().map { index, hole in
             Hole(
                 number: index + 1,
-                par: holeData.par ?? 4,
+                par: hole.par ?? 4,
                 frontLatitude: 0,
                 frontLongitude: 0,
                 centerLatitude: 0,
