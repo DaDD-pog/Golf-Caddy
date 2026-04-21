@@ -153,6 +153,30 @@ struct ContentView: View {
         locationManager.latitude != 0 || locationManager.longitude != 0
     }
     
+    private var mainLandscapeYardageValue: String {
+        if hasHoleCoordinates && centerYards > 0 {
+            return "\(centerYards)"
+        }
+        
+        if customPin != nil && customPinDistance > 0 {
+            return "\(customPinDistance)"
+        }
+        
+        return "--"
+    }
+    
+    private var mainLandscapeYardageLabel: String {
+        if hasHoleCoordinates && centerYards > 0 {
+            return "CENTER"
+        }
+        
+        if customPin != nil && customPinDistance > 0 {
+            return "TARGET"
+        }
+        
+        return "YARDS"
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             let isLandscape = geometry.size.width > geometry.size.height
@@ -276,6 +300,8 @@ struct ContentView: View {
                 Color(.systemGray6)
                     .ignoresSafeArea()
             }
+            
+            giantLandscapeYardageOverlay
             
             VStack {
                 HStack(alignment: .top) {
@@ -663,7 +689,6 @@ struct ContentView: View {
             }
         }
     }
-
     
     private var yardageSection: some View {
         VStack(spacing: 16) {
@@ -711,30 +736,6 @@ struct ContentView: View {
         }
     }
     
-    private var mainLandscapeYardageValue: String {
-        if hasHoleCoordinates && centerYards > 0 {
-            return "\(centerYards)"
-        }
-        
-        if customPin != nil && customPinDistance > 0 {
-            return "\(customPinDistance)"
-        }
-        
-        return "--"
-    }
-
-    private var mainLandscapeYardageLabel: String {
-        if hasHoleCoordinates && centerYards > 0 {
-            return "CENTER"
-        }
-        
-        if customPin != nil && customPinDistance > 0 {
-            return "TARGET"
-        }
-        
-        return "YARDS"
-    }
-
     private var giantLandscapeYardageOverlay: some View {
         VStack(spacing: 4) {
             Text(mainLandscapeYardageLabel)
