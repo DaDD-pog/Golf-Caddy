@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct Golf_CaddyApp: App {
+struct Golf_Caddy_CompanionApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
