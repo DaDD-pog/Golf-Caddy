@@ -28,6 +28,9 @@ struct ContentView: View {
     @State private var nearbyCourses: [DetectedCourse] = []
     @State private var showCoursePicker = false
     
+    @State private var showLandscapeMenu = false
+    @State private var followUserMode = true
+    
     private var holes: [Hole] {
         course?.holes ?? []
     }
@@ -38,14 +41,22 @@ struct ContentView: View {
     }
     
     private var userCoordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(
+        if let location = locationManager.currentLocation {
+            return location.coordinate
+        }
+        
+        return CLLocationCoordinate2D(
             latitude: locationManager.latitude,
             longitude: locationManager.longitude
         )
     }
     
     private var userLocation: CLLocation {
-        CLLocation(
+        if let location = locationManager.currentLocation {
+            return location
+        }
+        
+        return CLLocation(
             latitude: locationManager.latitude,
             longitude: locationManager.longitude
         )
@@ -145,12 +156,27 @@ struct ContentView: View {
         return scores[currentHoleIndex]
     }
     
+    private var currentRelativeScore: Int {
+        guard let currentHole else { return 0 }
+        return currentScore - currentHole.par
+    }
+    
     private var totalScore: Int {
         scores.reduce(0, +)
     }
     
+    private var totalRelativeScore: Int {
+        holes.enumerated().reduce(0) { partial, item in
+            let index = item.offset
+            let hole = item.element
+            
+            guard index < scores.count else { return partial }
+            return partial + (scores[index] - hole.par)
+        }
+    }
+    
     private var locationReady: Bool {
-        locationManager.latitude != 0 || locationManager.longitude != 0
+        locationManager.isLocationReady
     }
     
     private var mainLandscapeYardageValue: String {
@@ -292,7 +318,7 @@ struct ContentView: View {
     }
     
     private func landscapeCartView(geometry: GeometryProxy) -> some View {
-        ZStack {
+        ZStack(alignment: .leading) {
             if locationReady {
                 mapSection(mapHeight: geometry.size.height, rounded: false)
                     .ignoresSafeArea()
@@ -301,58 +327,69 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             
-            if locationReady {
-                VStack {
-                    giantLandscapeYardageOverlay
-                        .padding(.top, 90)
-                    Spacer()
-                }
-                .allowsHitTesting(false)
-            }
-            
             VStack {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        connectionCompactSection
-                        courseCompactSection
-                        holeCompactSection
+                    HStack(spacing: 12) {
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                showLandscapeMenu.toggle()
+                            }
+                        } label: {
+                            Image(systemName: showLandscapeMenu ? "xmark" : "line.3.horizontal")
+                                .font(.title2)
+                                .foregroundColor(.primary)
+                                .padding(14)
+                                .background(.thinMaterial)
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
+                        }
+                        
+                        compactCard {
+                            HStack(spacing: 20) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Score")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(formattedRelativeScore(currentRelativeScore))
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(relativeScoreColor(currentRelativeScore))
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Par")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("\(currentHole?.par ?? 0)")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Score")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("\(currentScore)")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                }
+                            }
+                        }
                     }
                     
                     Spacer()
                     
-                    VStack(alignment: .trailing, spacing: 12) {
-                        if isLoadingCourse {
-                            compactCard {
-                                ProgressView(loadingMessage)
-                            }
-                        }
-                        
-                        if let loadingErrorMessage {
-                            compactCard {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Error")
-                                        .font(.headline)
-                                    Text(loadingErrorMessage)
-                                        .font(.subheadline)
-                                }
-                                .foregroundColor(.red)
-                            }
-                        }
-                        
-                        if hasHoleCoordinates {
-                            largeYardageHud
-                        } else {
-                            compactCard {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Map Mode")
-                                        .font(.headline)
-                                    Text("No hole GPS data. Tap anywhere to measure distance.")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
+                    if locationReady {
+                        giantLandscapeYardageOverlay
                     }
+                    
+                    Spacer()
+                    
+                    Button("Scorecard") {
+                        showScorecard = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -360,61 +397,6 @@ struct ContentView: View {
                 Spacer()
                 
                 HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        compactCard {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Rangefinder")
-                                    .font(.headline)
-                                
-                                Toggle("Enable", isOn: $rangefinderModeEnabled)
-                                
-                                if let pin = customPin {
-                                    Text("Target: \(customPinDistance) yd")
-                                        .font(.title3)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.purple)
-                                    
-                                    Text("Lat: \(String(format: "%.5f", pin.latitude))  Lon: \(String(format: "%.5f", pin.longitude))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Tap on the map to drop a target.")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        
-                        if customPin != nil {
-                            Button("Clear Target") {
-                                clearPin()
-                                sendLiveData()
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    VStack(spacing: 12) {
-                        Button {
-                            centerOnUser()
-                        } label: {
-                            Image(systemName: "location.fill")
-                                .font(.title2)
-                                .foregroundColor(.blue)
-                                .padding(14)
-                                .background(Color.white)
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                        
-                        Button("Scorecard") {
-                            showScorecard = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    
                     Spacer()
                     
                     compactCard {
@@ -432,8 +414,9 @@ struct ContentView: View {
                                         .font(.system(size: 34))
                                 }
                                 
-                                Text("\(currentScore)")
+                                Text(formattedRelativeScore(currentRelativeScore))
                                     .font(.system(size: 34, weight: .bold))
+                                    .foregroundColor(relativeScoreColor(currentRelativeScore))
                                     .frame(minWidth: 50)
                                 
                                 Button {
@@ -446,9 +429,9 @@ struct ContentView: View {
                                 }
                             }
                             
-                            Text("Total: \(totalScore)")
+                            Text("Total: \(formattedRelativeScore(totalRelativeScore))")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(relativeScoreColor(totalRelativeScore))
                             
                             HStack(spacing: 16) {
                                 Button("Previous") {
@@ -475,7 +458,175 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
             }
+            
+            if showLandscapeMenu {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                            showLandscapeMenu = false
+                        }
+                    }
+            }
+            
+            HStack(spacing: 0) {
+                if showLandscapeMenu {
+                    landscapeSideMenu
+                        .frame(width: min(360, geometry.size.width * 0.42))
+                        .transition(.move(edge: .leading))
+                }
+                
+                Spacer()
+            }
         }
+    }
+    
+    private var landscapeSideMenu: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Round Menu")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                compactCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Course")
+                            .font(.headline)
+                        
+                        Text(course?.name ?? "No Course Loaded")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                        
+                        Text("\(course?.city ?? ""), \(course?.state ?? "")")
+                            .foregroundColor(.secondary)
+                        
+                        if let detectedCourseName {
+                            Text("Detected: \(detectedCourseName)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                compactCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Map")
+                            .font(.headline)
+                        
+                        Toggle("Follow My Position", isOn: $followUserMode)
+                        
+                        Button("Center On Me") {
+                            centerOnUser()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                
+                compactCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Rangefinder")
+                            .font(.headline)
+                        
+                        Toggle("Enable Rangefinder Mode", isOn: $rangefinderModeEnabled)
+                        
+                        if let pin = customPin {
+                            Text("Target: \(customPinDistance) yd")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.purple)
+                            
+                            Text("Lat: \(String(format: "%.5f", pin.latitude))  Lon: \(String(format: "%.5f", pin.longitude))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Button("Clear Target") {
+                                clearPin()
+                                sendLiveData()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        } else {
+                            Text("Tap anywhere on the map to drop a target.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                compactCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Yardages")
+                            .font(.headline)
+                        
+                        if hasHoleCoordinates {
+                            yardageMenuRow(title: "Front", yards: frontYards)
+                            yardageMenuRow(title: "Center", yards: centerYards)
+                            yardageMenuRow(title: "Back", yards: backYards)
+                        } else {
+                            Text("No hole GPS data for this course yet.")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                compactCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Companion")
+                            .font(.headline)
+                        
+                        Text("Status: \(peerManager.connectionStatus)")
+                            .foregroundColor(peerManager.connectionStatus == "Connected" ? .green : .secondary)
+                        
+                        Text("Peer: \(peerManager.connectedPeerName)")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if isLoadingCourse {
+                    compactCard {
+                        ProgressView(loadingMessage)
+                    }
+                }
+                
+                if let loadingErrorMessage {
+                    compactCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Error")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                            
+                            Text(loadingErrorMessage)
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                Button("Retry") {
+                                    retryCourseLoad()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                
+                                Button("Load Demo") {
+                                    loadDemoCourse()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                }
+                
+                Button("Close Menu") {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                        showLandscapeMenu = false
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(20)
+        }
+        .frame(maxHeight: .infinity)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .trailing) {
+            Divider()
+        }
+        .ignoresSafeArea()
     }
     
     private var connectionSection: some View {
@@ -495,20 +646,6 @@ struct ContentView: View {
         .cornerRadius(16)
     }
     
-    private var connectionCompactSection: some View {
-        compactCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Companion")
-                    .font(.headline)
-                Text("Status: \(peerManager.connectionStatus)")
-                    .foregroundColor(peerManager.connectionStatus == "Connected" ? .green : .secondary)
-                Text("Peer: \(peerManager.connectedPeerName)")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
-            }
-        }
-    }
-    
     private var courseHeaderSection: some View {
         VStack(spacing: 8) {
             Text(course?.name ?? "No Course Loaded")
@@ -522,25 +659,6 @@ struct ContentView: View {
         }
     }
     
-    private var courseCompactSection: some View {
-        compactCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(course?.name ?? "No Course Loaded")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text("\(course?.city ?? ""), \(course?.state ?? "")")
-                    .foregroundColor(.secondary)
-                
-                if let detectedCourseName {
-                    Text("Detected: \(detectedCourseName)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-    
     private func holeHeaderSection(currentHole: Hole) -> some View {
         VStack(spacing: 8) {
             Text("Hole \(currentHole.number)")
@@ -549,18 +667,6 @@ struct ContentView: View {
             Text("Par \(currentHole.par)")
                 .font(.title2)
                 .foregroundColor(.secondary)
-        }
-    }
-    
-    private var holeCompactSection: some View {
-        compactCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Hole \(currentHole?.number ?? 0)")
-                    .font(.system(size: 30, weight: .bold))
-                Text("Par \(currentHole?.par ?? 0)")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
-            }
         }
     }
     
@@ -708,41 +814,6 @@ struct ContentView: View {
         .cornerRadius(16)
     }
     
-    private var largeYardageHud: some View {
-        compactCard {
-            VStack(alignment: .trailing, spacing: 10) {
-                Text("Yardages")
-                    .font(.headline)
-                
-                HStack(spacing: 16) {
-                    VStack(alignment: .trailing) {
-                        Text("Front")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(frontYards)")
-                            .font(.system(size: 34, weight: .bold))
-                    }
-                    
-                    VStack(alignment: .trailing) {
-                        Text("Center")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(centerYards)")
-                            .font(.system(size: 42, weight: .bold))
-                    }
-                    
-                    VStack(alignment: .trailing) {
-                        Text("Back")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(backYards)")
-                            .font(.system(size: 34, weight: .bold))
-                    }
-                }
-            }
-        }
-    }
-    
     private var giantLandscapeYardageOverlay: some View {
         VStack(spacing: 4) {
             Text(mainLandscapeYardageLabel)
@@ -834,8 +905,9 @@ struct ContentView: View {
                         .font(.system(size: 32))
                 }
                 
-                Text("\(currentScore)")
+                Text(formattedRelativeScore(currentRelativeScore))
                     .font(.system(size: 34, weight: .bold))
+                    .foregroundColor(relativeScoreColor(currentRelativeScore))
                     .frame(minWidth: 50)
                 
                 Button {
@@ -848,9 +920,9 @@ struct ContentView: View {
                 }
             }
             
-            Text("Total Score: \(totalScore)")
+            Text("Total: \(formattedRelativeScore(totalRelativeScore))")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(relativeScoreColor(totalRelativeScore))
         }
         .padding()
         .background(Color.gray.opacity(0.12))
@@ -918,7 +990,7 @@ struct ContentView: View {
                 .font(.title2)
                 .foregroundColor(.red)
             
-            Text("The app needs your location to detect a course, or you can load the demo course.")
+            Text(locationManager.locationErrorMessage ?? "The app needs a valid GPS fix to detect a course, or you can load the demo course.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
             
@@ -957,8 +1029,8 @@ struct ContentView: View {
                 longitude: locationManager.longitude
             ),
             span: MKCoordinateSpan(
-                latitudeDelta: 0.002,
-                longitudeDelta: 0.002
+                latitudeDelta: 0.0014,
+                longitudeDelta: 0.0014
             )
         )
         
@@ -982,6 +1054,10 @@ struct ContentView: View {
         
         guard locationReady else { return }
         
+        if followUserMode {
+            centerOnUser()
+        }
+        
         if !hasStartedInitialLoad {
             hasStartedInitialLoad = true
             centerOnUser()
@@ -991,7 +1067,7 @@ struct ContentView: View {
     
     private func retryCourseLoad() {
         guard locationReady else {
-            loadingErrorMessage = "Location is not ready yet. Check location permissions and wait a moment."
+            loadingErrorMessage = locationManager.locationErrorMessage ?? "Location is not ready yet. Wait for a more accurate GPS fix."
             return
         }
         
@@ -1158,6 +1234,33 @@ struct ContentView: View {
             Text("\(yards) yd")
         }
         .font(.title3)
+    }
+    
+    private func yardageMenuRow(title: String, yards: Int) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text("\(yards) yd")
+                .fontWeight(.semibold)
+        }
+    }
+}
+
+private func formattedRelativeScore(_ value: Int) -> String {
+    if value > 0 {
+        return "+\(value)"
+    } else {
+        return "\(value)"
+    }
+}
+
+private func relativeScoreColor(_ value: Int) -> Color {
+    if value < 0 {
+        return .green
+    } else if value > 0 {
+        return .red
+    } else {
+        return .primary
     }
 }
 

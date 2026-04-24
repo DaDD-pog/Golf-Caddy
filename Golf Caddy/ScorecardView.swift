@@ -12,6 +12,16 @@ struct ScorecardView: View {
         holes.reduce(0) { $0 + $1.par }
     }
     
+    var totalRelativeScore: Int {
+        holes.enumerated().reduce(0) { partial, item in
+            let index = item.offset
+            let hole = item.element
+            
+            guard index < scores.count else { return partial }
+            return partial + (scores[index] - hole.par)
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
@@ -20,9 +30,13 @@ struct ScorecardView: View {
                         .font(.largeTitle)
                         .fontWeight(.bold)
                     
-                    Text("Total: \(totalScore)")
+                    Text("Total: \(formattedRelativeScore(totalRelativeScore))")
                         .font(.title2)
                         .fontWeight(.semibold)
+                        .foregroundColor(relativeScoreColor(totalRelativeScore))
+                    
+                    Text("Strokes: \(totalScore)")
+                        .foregroundColor(.secondary)
                     
                     Text("Course Par: \(totalPar)")
                         .foregroundColor(.secondary)
@@ -41,23 +55,30 @@ struct ScorecardView: View {
                             
                             Spacer()
                             
-                            HStack(spacing: 12) {
-                                Button {
-                                    scores[index] -= 1
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .font(.title2)
-                                }
-                                
-                                Text("\(scores[index])")
+                            VStack(alignment: .trailing, spacing: 8) {
+                                Text(formattedRelativeScore(scores[index] - hole.par))
                                     .font(.title2)
-                                    .frame(minWidth: 30)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(relativeScoreColor(scores[index] - hole.par))
                                 
-                                Button {
-                                    scores[index] += 1
-                                } label: {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.title2)
+                                HStack(spacing: 12) {
+                                    Button {
+                                        scores[index] -= 1
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .font(.title2)
+                                    }
+                                    
+                                    Text("\(scores[index])")
+                                        .font(.title3)
+                                        .frame(minWidth: 30)
+                                    
+                                    Button {
+                                        scores[index] += 1
+                                    } label: {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title2)
+                                    }
                                 }
                             }
                         }
@@ -67,6 +88,24 @@ struct ScorecardView: View {
             }
             .navigationTitle("Scorecard")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+    
+    private func formattedRelativeScore(_ value: Int) -> String {
+        if value > 0 {
+            return "+\(value)"
+        } else {
+            return "\(value)"
+        }
+    }
+    
+    private func relativeScoreColor(_ value: Int) -> Color {
+        if value < 0 {
+            return .green
+        } else if value > 0 {
+            return .red
+        } else {
+            return .primary
         }
     }
 }
